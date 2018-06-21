@@ -8,6 +8,8 @@ import android.content.IntentFilter;
 import android.content.Loader;
 import android.database.Cursor;
 import android.os.Bundle;
+import android.support.design.widget.CoordinatorLayout;
+import android.support.design.widget.Snackbar;
 import android.support.v4.widget.SwipeRefreshLayout;
 import android.support.v7.app.ActionBarActivity;
 import android.support.v7.widget.RecyclerView;
@@ -16,10 +18,11 @@ import android.support.v7.widget.Toolbar;
 import android.text.Html;
 import android.text.format.DateUtils;
 import android.util.Log;
-import android.util.TypedValue;
+import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 
 import com.example.xyzreader.R;
@@ -32,6 +35,9 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.GregorianCalendar;
 
+import butterknife.BindView;
+import butterknife.ButterKnife;
+
 /**
  * An activity representing a list of Articles. This activity has different presentations for
  * handset and tablet-size devices. On handsets, the activity presents a list of items, which when
@@ -42,9 +48,27 @@ public class ArticleListActivity extends ActionBarActivity implements
         LoaderManager.LoaderCallbacks<Cursor> {
 
     private static final String TAG = ArticleListActivity.class.toString();
-    private Toolbar mToolbar;
-    private SwipeRefreshLayout mSwipeRefreshLayout;
-    private RecyclerView mRecyclerView;
+
+    @BindView(R.id.toolbar)
+    Toolbar mToolbar;
+
+    @BindView(R.id.swipe_refresh_layout)
+    SwipeRefreshLayout mSwipeRefreshLayout;
+
+    @BindView(R.id.recycler_view)
+    RecyclerView mRecyclerView;
+
+    @BindView(R.id.pb_loading)
+    ProgressBar mProgressBar;
+
+    @BindView(R.id.cl_main)
+    CoordinatorLayout mCoordinatorLayout;
+
+    private final int SAVED_ARTICLES_INIT_LOAD=1;
+
+    private boolean mIsRefreshing;
+    private boolean networkLive;
+    private Intent mReceiverRegisteringIntent;
 
     private SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.sss");
     // Use default locale format
@@ -57,18 +81,38 @@ public class ArticleListActivity extends ActionBarActivity implements
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_article_list);
 
-        mToolbar = (Toolbar) findViewById(R.id.toolbar);
+        ButterKnife.bind(this);
+        setSupportActionBar(mToolbar);
+        getSupportActionBar().setDisplayShowTitleEnabled(false);
+
+        mProgressBar.setVisibility(View.GONE);
 
 
-        final View toolbarContainerView = findViewById(R.id.toolbar_container);
+        mIsRefreshing=false;
+        networkLive=false;
 
-        mSwipeRefreshLayout = (SwipeRefreshLayout) findViewById(R.id.swipe_refresh_layout);
-
-        mRecyclerView = (RecyclerView) findViewById(R.id.recycler_view);
-        getLoaderManager().initLoader(0, null, this);
+        getLoaderManager().initLoader(SAVED_ARTICLES_INIT_LOAD, null, this);
 
         if (savedInstanceState == null) {
             refresh();
+        }
+    }
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        getMenuInflater().inflate(R.menu.main, menu);
+        return true;
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        switch (item.getItemId()) {
+            case R.id.refresh:
+                refresh();
+                return true;
+            default:
+                return super.onOptionsItemSelected(item);
+
         }
     }
 
@@ -81,15 +125,19 @@ public class ArticleListActivity extends ActionBarActivity implements
         super.onStart();
         registerReceiver(mRefreshingReceiver,
                 new IntentFilter(UpdaterService.BROADCAST_ACTION_STATE_CHANGE));
+        //Workaround to prevent snackbar being shown when onReceive is triggered upon registration
+        mReceiverRegisteringIntent=registerReceiver(mNetworkLiveReceiver, new IntentFilter
+                (UpdaterService.BROADCAST_NETWORK_STATE));
     }
 
     @Override
     protected void onStop() {
         super.onStop();
         unregisterReceiver(mRefreshingReceiver);
+        unregisterReceiver(mNetworkLiveReceiver);
     }
 
-    private boolean mIsRefreshing = false;
+
 
     private BroadcastReceiver mRefreshingReceiver = new BroadcastReceiver() {
         @Override
@@ -101,7 +149,40 @@ public class ArticleListActivity extends ActionBarActivity implements
         }
     };
 
+    private BroadcastReceiver mNetworkLiveReceiver=new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (mReceiverRegisteringIntent!=null) {
+                mReceiverRegisteringIntent=null;
+            } else {
+                if (UpdaterService.BROADCAST_NETWORK_STATE.equals(intent.getAction())){
+                    networkLive=intent.getBooleanExtra(UpdaterService.NETWORK_STATE_LIVE, false);
+                    if (!networkLive){
+                        showSnackBar();
+                    }
+                }
+            }
+        }
+    };
+
+    private void showSnackBar() {
+        final Snackbar snackbar=Snackbar.make(mCoordinatorLayout, getString(R.string.no_connection),
+                Snackbar.LENGTH_INDEFINITE )
+                .setAction(getString(R.string.action_retry), new View.OnClickListener() {
+                    @Override
+                    public void onClick(View view) {
+                        refresh();
+                    }
+                });
+                snackbar.show();
+    }
     private void updateRefreshingUI() {
+
+        if (mIsRefreshing) {
+            mProgressBar.setVisibility(View.VISIBLE);
+        } else {
+            mProgressBar.setVisibility(View.GONE);
+        }
         mSwipeRefreshLayout.setRefreshing(mIsRefreshing);
     }
 
@@ -197,15 +278,20 @@ public class ArticleListActivity extends ActionBarActivity implements
     }
 
     public static class ViewHolder extends RecyclerView.ViewHolder {
-        public DynamicHeightNetworkImageView thumbnailView;
-        public TextView titleView;
-        public TextView subtitleView;
+
+        @BindView(R.id.thumbnail)
+        DynamicHeightNetworkImageView thumbnailView;
+
+        @BindView(R.id.article_title)
+        TextView titleView;
+
+        @BindView(R.id.article_subtitle)
+        TextView subtitleView;
 
         public ViewHolder(View view) {
             super(view);
-            thumbnailView = (DynamicHeightNetworkImageView) view.findViewById(R.id.thumbnail);
-            titleView = (TextView) view.findViewById(R.id.article_title);
-            subtitleView = (TextView) view.findViewById(R.id.article_subtitle);
+            ButterKnife.bind(this, view);
+
         }
     }
 }

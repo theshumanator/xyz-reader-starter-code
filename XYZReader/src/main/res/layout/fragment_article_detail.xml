@@ -22,11 +22,11 @@
                     android:scaleType="centerCrop"
                     android:src="@drawable/empty_detail"
                     android:layout_width="match_parent"
-                    android:layout_height="305dp" />
+                    android:layout_height="@dimen/detail_photo_height" />
 
                 <View
                     android:layout_width="match_parent"
-                    android:layout_height="305dp"
+                    android:layout_height="@dimen/detail_photo_height"
                     android:background="@drawable/photo_background_protection" />
 
             </FrameLayout>
@@ -93,7 +93,7 @@
         </FrameLayout>
     </com.example.xyzreader.ui.ObservableScrollView>
 
-    <ImageButton android:id="@+id/share_fab"
+    <android.support.design.widget.FloatingActionButton android:id="@+id/share_fab"
         android:stateListAnimator="@anim/fab_state_list_anim"
         android:background="@drawable/add_fab_background"
         android:layout_gravity="bottom|end"
